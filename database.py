@@ -107,6 +107,14 @@ def get_categories():
         ).fetchall()
 
 
+def get_all_categories():
+    """Admin panel uchun - o'chirilganlarni ham ko'rsatadi emas, faqat aktivlarni, lekin barcha maydonlar bilan."""
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT * FROM categories WHERE is_active=1 ORDER BY sort_order, id"
+        ).fetchall()
+
+
 def add_category(name, icon_emoji="🎮", badge="", needs_player_id=0):
     with get_conn() as conn:
         cur = conn.execute(
@@ -114,6 +122,20 @@ def add_category(name, icon_emoji="🎮", badge="", needs_player_id=0):
             (name, icon_emoji, badge, needs_player_id),
         )
         return cur.lastrowid
+
+
+def update_category(category_id, name, icon_emoji, badge, needs_player_id):
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE categories SET name=?, icon_emoji=?, badge=?, needs_player_id=? WHERE id=?",
+            (name, icon_emoji, badge, needs_player_id, category_id),
+        )
+
+
+def delete_category(category_id: int):
+    with get_conn() as conn:
+        conn.execute("UPDATE categories SET is_active=0 WHERE id=?", (category_id,))
+        conn.execute("UPDATE products SET is_active=0 WHERE category_id=?", (category_id,))
 
 
 def get_category(category_id: int):
@@ -144,6 +166,11 @@ def add_product(category_id, name, price):
         return cur.lastrowid
 
 
+def update_product(product_id: int, name: str, price: int):
+    with get_conn() as conn:
+        conn.execute("UPDATE products SET name=?, price=? WHERE id=?", (name, price, product_id))
+
+
 def update_product_price(product_id: int, new_price: int):
     with get_conn() as conn:
         conn.execute("UPDATE products SET price=? WHERE id=?", (new_price, product_id))
@@ -162,7 +189,7 @@ def delete_product(product_id: int):
 def get_all_products_with_category():
     with get_conn() as conn:
         return conn.execute(
-            """SELECT p.id, p.name, p.price, c.name AS category_name
+            """SELECT p.id, p.name, p.price, p.category_id, c.name AS category_name
                FROM products p JOIN categories c ON c.id = p.category_id
                WHERE p.is_active=1
                ORDER BY c.sort_order, c.id, p.sort_order, p.id"""
@@ -204,6 +231,27 @@ def get_user_orders(user_id: int, limit: int = 50):
         ).fetchall()
 
 
+def get_all_orders(status: str = None, limit: int = 200):
+    with get_conn() as conn:
+        if status:
+            return conn.execute(
+                """SELECT o.*, p.name AS product_name, u.username, u.full_name
+                   FROM orders o
+                   JOIN products p ON p.id = o.product_id
+                   JOIN users u ON u.user_id = o.user_id
+                   WHERE o.status=? ORDER BY o.id DESC LIMIT ?""",
+                (status, limit),
+            ).fetchall()
+        return conn.execute(
+            """SELECT o.*, p.name AS product_name, u.username, u.full_name
+               FROM orders o
+               JOIN products p ON p.id = o.product_id
+               JOIN users u ON u.user_id = o.user_id
+               ORDER BY o.id DESC LIMIT ?""",
+            (limit,),
+        ).fetchall()
+
+
 # ---------- TOPUPS (hisob to'ldirish) ----------
 def create_topup(user_id: int, amount: int, method: str, receipt_file_id: str = None) -> int:
     with get_conn() as conn:
@@ -235,3 +283,38 @@ def get_user_topups(user_id: int, limit: int = 50):
         return conn.execute(
             "SELECT * FROM topups WHERE user_id=? ORDER BY id DESC LIMIT ?", (user_id, limit)
         ).fetchall()
+
+
+def get_all_topups(status: str = None, limit: int = 200):
+    with get_conn() as conn:
+        if status:
+            return conn.execute(
+                """SELECT t.*, u.username, u.full_name
+                   FROM topups t JOIN users u ON u.user_id = t.user_id
+                   WHERE t.status=? ORDER BY t.id DESC LIMIT ?""",
+                (status, limit),
+            ).fetchall()
+        return conn.execute(
+            """SELECT t.*, u.username, u.full_name
+               FROM topups t JOIN users u ON u.user_id = t.user_id
+               ORDER BY t.id DESC LIMIT ?""",
+            (limit,),
+        ).fetchall()
+
+
+def get_stats():
+    with get_conn() as conn:
+        users_count = conn.execute("SELECT COUNT(*) c FROM users").fetchone()["c"]
+        orders_count = conn.execute("SELECT COUNT(*) c FROM orders").fetchone()["c"]
+        pending_orders = conn.execute("SELECT COUNT(*) c FROM orders WHERE status='kutilmoqda'").fetchone()["c"]
+        pending_topups = conn.execute("SELECT COUNT(*) c FROM topups WHERE status='kutilmoqda'").fetchone()["c"]
+        total_revenue = conn.execute(
+            "SELECT COALESCE(SUM(price),0) s FROM orders WHERE status IN ('bajarildi','kutilmoqda')"
+        ).fetchone()["s"]
+        return {
+            "users_count": users_count,
+            "orders_count": orders_count,
+            "pending_orders": pending_orders,
+            "pending_topups": pending_topups,
+            "total_revenue": total_revenue,
+        }
