@@ -1,329 +1,287 @@
-import asyncio
-import contextlib
-import logging
-import secrets
+const tg = window.Telegram?.WebApp;
+if (tg) { tg.ready(); tg.expand(); }
 
-from fastapi import FastAPI, Request, HTTPException, Depends
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from pydantic import BaseModel
+const initData = tg?.initData || "";
+const API = "";
 
-from aiogram import Bot, Dispatcher
-from aiogram.fsm.storage.memory import MemoryStorage
+let state = {
+  categories: [],
+  currentCategory: null,
+  currentProducts: [],
+  selectedProduct: null,
+  balance: 0,
+};
 
-import database as db
-from config import BOT_TOKEN, PORT, ADMIN_PANEL_USERNAME, ADMIN_PANEL_PASSWORD
-from webapp_auth import validate_init_data
-import bot_handlers
+// ---------------- helpers ----------------
+function fmt(n) {
+  return Number(n).toLocaleString("ru-RU").replace(/,/g, " ");
+}
 
-logging.basicConfig(level=logging.INFO)
+function showToast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  setTimeout(() => t.classList.remove("show"), 2200);
+}
 
-db.init_db()
+async function api(path, body) {
+  const res = await fetch(API + path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body || {}),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Xatolik yuz berdi" }));
+    throw new Error(err.detail || "Xatolik yuz berdi");
+  }
+  return res.json();
+}
 
-bot = Bot(token=BOT_TOKEN) if BOT_TOKEN else None
-dp = Dispatcher(storage=MemoryStorage())
-dp.include_router(bot_handlers.router)
+async function apiGet(path) {
+  const res = await fetch(API + path);
+  if (!res.ok) throw new Error("Xatolik yuz berdi");
+  return res.json();
+}
 
-app = FastAPI()
-app.add_middleware(
-    CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
-)
+// ---------------- navigation ----------------
+function switchTab(tab) {
+  document.querySelectorAll(".view").forEach(v => v.classList.add("hidden"));
+  document.getElementById(`view-${tab}`).classList.remove("hidden");
+  document.querySelectorAll(".nav-btn").forEach(b => b.classList.remove("active"));
+  const navBtn = document.querySelector(`.nav-btn[data-tab="${tab}"]`);
+  if (navBtn) navBtn.classList.add("active");
 
-_polling_task = None
+  if (tab === "history") loadHistory("orders");
+}
 
+document.querySelectorAll(".nav-btn").forEach(btn => {
+  btn.addEventListener("click", () => switchTab(btn.dataset.tab));
+});
 
-@app.on_event("startup")
-async def on_startup():
-    global _polling_task
-    if bot:
-        await bot.delete_webhook(drop_pending_updates=True)
-        _polling_task = asyncio.create_task(dp.start_polling(bot))
+document.querySelectorAll("[data-back]").forEach(btn => {
+  btn.addEventListener("click", () => switchTab(btn.dataset.back));
+});
 
+// ---------------- load current user ----------------
+async function loadMe() {
+  try {
+    const me = await api("/api/me", { init_data: initData });
+    state.balance = me.balance;
+    document.getElementById("balanceValue").textContent = fmt(me.balance);
+    document.getElementById("userName").textContent = me.full_name || me.username || "Foydalanuvchi";
+    document.getElementById("userIdLabel").textContent = `ID: ${me.user_id}`;
+    document.getElementById("avatar").textContent = (me.full_name || "A").charAt(0).toUpperCase();
+    document.getElementById("settingsUserId").textContent = me.user_id;
+    document.getElementById("settingsBalance").textContent = `${fmt(me.balance)} so'm`;
+  } catch (e) {
+    showToast("Foydalanuvchini aniqlab bo'lmadi. Botni Telegram ichida oching.");
+  }
+}
 
-@app.on_event("shutdown")
-async def on_shutdown():
-    if _polling_task:
-        _polling_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await _polling_task
-
-
-# ---------------- Auth helper (mini app) ----------------
-def get_authed_user(init_data: str) -> dict:
-    user = validate_init_data(init_data)
-    if not user:
-        raise HTTPException(status_code=401, detail="Noto'g'ri yoki muddati o'tgan initData")
-    return user
-
-
-# ---------------- Auth helper (admin panel) ----------------
-security = HTTPBasic()
-
-
-def check_admin_auth(credentials: HTTPBasicCredentials = Depends(security)):
-    correct_username = secrets.compare_digest(credentials.username, ADMIN_PANEL_USERNAME)
-    correct_password = secrets.compare_digest(credentials.password, ADMIN_PANEL_PASSWORD)
-    if not (correct_username and correct_password):
-        raise HTTPException(
-            status_code=401,
-            detail="Login yoki parol noto'g'ri",
-            headers={"WWW-Authenticate": "Basic"},
-        )
-    return credentials.username
-
-
-# ---------------- API models ----------------
-class OrderRequest(BaseModel):
-    init_data: str
-    product_id: int
-    player_id: str | None = None
-
-
-class MeRequest(BaseModel):
-    init_data: str
-
-
-# ---------------- API routes ----------------
-@app.post("/api/me")
-async def api_me(body: MeRequest):
-    tg_user = get_authed_user(body.init_data)
-    db.upsert_user(tg_user["id"], tg_user.get("username"), tg_user.get("first_name", ""))
-    user = db.get_user(tg_user["id"])
-    return {
-        "user_id": user["user_id"],
-        "username": user["username"],
-        "full_name": user["full_name"],
-        "phone": user["phone"],
-        "balance": user["balance"],
+// ---------------- categories ----------------
+async function loadCategories() {
+  try {
+    state.categories = await apiGet("/api/categories");
+    const grid = document.getElementById("categoryGrid");
+    if (!state.categories.length) {
+      grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1">Hozircha xizmatlar qo'shilmagan.</div>`;
+      return;
     }
+    grid.innerHTML = state.categories.map(c => `
+      <button class="tile" data-cat="${c.id}">
+        ${c.badge ? `<span class="tile-badge">${c.badge}</span>` : ""}
+        <div class="tile-icon">${c.icon_emoji || "🎮"}</div>
+        <div class="tile-name">${c.name}</div>
+      </button>
+    `).join("");
+    grid.querySelectorAll(".tile").forEach(tile => {
+      tile.addEventListener("click", () => openCategory(parseInt(tile.dataset.cat)));
+    });
+  } catch (e) {
+    showToast("Kategoriyalarni yuklab bo'lmadi.");
+  }
+}
 
+async function openCategory(categoryId) {
+  try {
+    const data = await apiGet(`/api/categories/${categoryId}/products`);
+    state.currentCategory = data.category;
+    state.currentProducts = data.products;
+    state.selectedProduct = null;
 
-@app.get("/api/categories")
-async def api_categories():
-    cats = db.get_categories()
-    return [dict(c) for c in cats]
+    document.getElementById("productsTitle").textContent = data.category.name;
+    const idBlock = document.getElementById("playerIdBlock");
+    idBlock.classList.toggle("hidden", !data.category.needs_player_id);
+    document.getElementById("playerIdInput").value = "";
 
-
-@app.get("/api/categories/{category_id}/products")
-async def api_products(category_id: int):
-    category = db.get_category(category_id)
-    if not category:
-        raise HTTPException(status_code=404, detail="Kategoriya topilmadi")
-    products = db.get_products(category_id)
-    return {
-        "category": dict(category),
-        "products": [dict(p) for p in products],
+    const list = document.getElementById("productList");
+    if (!data.products.length) {
+      list.innerHTML = `<div class="empty-state" style="grid-column:1/-1">Bu bo'limda hozircha mahsulot yo'q.</div>`;
+    } else {
+      list.innerHTML = data.products.map(p => `
+        <button class="product-card" data-prod="${p.id}">
+          <div class="product-name">${p.name}</div>
+          <div class="product-price">${fmt(p.price)} so'm</div>
+        </button>
+      `).join("");
+      list.querySelectorAll(".product-card").forEach(card => {
+        card.addEventListener("click", () => selectProduct(parseInt(card.dataset.prod)));
+      });
     }
+    removeBuyBar();
+    switchView("products");
+  } catch (e) {
+    showToast("Mahsulotlarni yuklab bo'lmadi.");
+  }
+}
 
+function switchView(name) {
+  document.querySelectorAll(".view").forEach(v => v.classList.add("hidden"));
+  document.getElementById(`view-${name}`).classList.remove("hidden");
+}
 
-@app.post("/api/order")
-async def api_create_order(body: OrderRequest):
-    tg_user = get_authed_user(body.init_data)
-    product = db.get_product(body.product_id)
-    if not product:
-        raise HTTPException(status_code=404, detail="Mahsulot topilmadi")
+function selectProduct(productId) {
+  state.selectedProduct = state.currentProducts.find(p => p.id === productId);
+  document.querySelectorAll(".product-card").forEach(c => {
+    c.classList.toggle("selected", parseInt(c.dataset.prod) === productId);
+  });
+  renderBuyBar();
+}
 
-    category = db.get_category(product["category_id"])
-    if category["needs_player_id"] and not body.player_id:
-        raise HTTPException(status_code=400, detail="Player ID kiritilishi shart")
+function removeBuyBar() {
+  const existing = document.querySelector(".buy-bar");
+  if (existing) existing.remove();
+}
 
-    user = db.get_user(tg_user["id"])
-    if not user or user["balance"] < product["price"]:
-        raise HTTPException(status_code=400, detail="Balansingiz yetarli emas")
+function renderBuyBar() {
+  removeBuyBar();
+  const bar = document.createElement("div");
+  bar.className = "buy-bar";
+  bar.innerHTML = `<button class="buy-btn" id="buyBtn">Sotib olish — ${fmt(state.selectedProduct.price)} so'm</button>`;
+  document.getElementById("view-products").appendChild(bar);
+  document.getElementById("buyBtn").addEventListener("click", submitOrder);
+}
 
-    order_id = db.create_order(tg_user["id"], product["id"], product["price"], body.player_id)
+async function submitOrder() {
+  if (!state.selectedProduct) return;
+  const needsId = state.currentCategory?.needs_player_id;
+  const playerId = document.getElementById("playerIdInput").value.trim();
 
-    caption = (
-        f"🆕 Yangi buyurtma #{order_id}\n"
-        f"Mijoz ID: {tg_user['id']} (@{tg_user.get('username', '-')})\n"
-        f"Mahsulot: {product['name']} — {product['price']:,} so'm\n".replace(",", " ")
-    )
-    if body.player_id:
-        caption += f"Player ID: {body.player_id}\n"
+  if (needsId && !playerId) {
+    showToast("Player ID kiriting");
+    return;
+  }
+  if (state.balance < state.selectedProduct.price) {
+    showToast("Balansingiz yetarli emas. Avval hisobni to'ldiring.");
+    return;
+  }
 
-    from config import ADMIN_IDS
-    if bot:
-        for admin_id in ADMIN_IDS:
-            try:
-                await bot.send_message(admin_id, caption, reply_markup=bot_handlers.admin_order_kb(order_id))
-            except Exception:
-                pass
+  const btn = document.getElementById("buyBtn");
+  btn.disabled = true;
+  btn.textContent = "Yuborilmoqda...";
 
-    return {"order_id": order_id, "status": "kutilmoqda"}
+  try {
+    const res = await api("/api/order", {
+      init_data: initData,
+      product_id: state.selectedProduct.id,
+      player_id: needsId ? playerId : null,
+    });
+    showToast(`Buyurtma #${res.order_id} qabul qilindi ✅`);
+    tg?.HapticFeedback?.notificationOccurred("success");
+    await loadMe();
+    switchTab("history");
+  } catch (e) {
+    showToast(e.message);
+    btn.disabled = false;
+    btn.textContent = `Sotib olish — ${fmt(state.selectedProduct.price)} so'm`;
+  }
+}
 
+// ---------------- history ----------------
+const statusLabels = {
+  kutilmoqda: "⏳ Kutilmoqda",
+  bajarildi: "🎉 Bajarildi",
+  bekor_qilindi: "❌ Bekor qilindi",
+  tasdiqlandi: "✅ Tasdiqlandi",
+  rad_etildi: "❌ Rad etildi",
+};
 
-@app.post("/api/orders")
-async def api_my_orders(body: MeRequest):
-    tg_user = get_authed_user(body.init_data)
-    orders = db.get_user_orders(tg_user["id"])
-    result = []
-    for o in orders:
-        product = db.get_product(o["product_id"])
-        result.append({
-            "id": o["id"], "product_name": product["name"] if product else "?",
-            "price": o["price"], "status": o["status"], "created_at": o["created_at"],
-        })
-    return result
+async function loadHistory(tab) {
+  document.querySelectorAll(".pill-tab").forEach(t => t.classList.toggle("active", t.dataset.histtab === tab));
+  const list = document.getElementById("historyList");
+  list.innerHTML = `<div class="empty-state">Yuklanmoqda...</div>`;
 
+  try {
+    if (tab === "orders") {
+      const orders = await api("/api/orders", { init_data: initData });
+      if (!orders.length) {
+        list.innerHTML = `<div class="empty-state">Hali buyurtmalar yo'q</div>`;
+        return;
+      }
+      list.innerHTML = orders.map(o => `
+        <div class="history-item">
+          <div class="hist-left">
+            <div class="hist-title">${o.product_name}</div>
+            <div class="hist-date">${o.created_at}</div>
+          </div>
+          <div class="hist-right">
+            <div class="hist-amount">${fmt(o.price)} so'm</div>
+            <span class="status-badge status-${o.status}">${statusLabels[o.status] || o.status}</span>
+          </div>
+        </div>
+      `).join("");
+    } else {
+      const topups = await api("/api/topups", { init_data: initData });
+      if (!topups.length) {
+        list.innerHTML = `<div class="empty-state">Hali to'lovlar yo'q</div>`;
+        return;
+      }
+      list.innerHTML = topups.map(t => `
+        <div class="history-item">
+          <div class="hist-left">
+            <div class="hist-title">Hisobni to'ldirish (${t.method.toUpperCase()})</div>
+            <div class="hist-date">${t.created_at}</div>
+          </div>
+          <div class="hist-right">
+            <div class="hist-amount">+${fmt(t.amount)} so'm</div>
+            <span class="status-badge status-${t.status}">${statusLabels[t.status] || t.status}</span>
+          </div>
+        </div>
+      `).join("");
+    }
+  } catch (e) {
+    list.innerHTML = `<div class="empty-state">Yuklab bo'lmadi</div>`;
+  }
+}
 
-@app.post("/api/topups")
-async def api_my_topups(body: MeRequest):
-    tg_user = get_authed_user(body.init_data)
-    topups = db.get_user_topups(tg_user["id"])
-    return [dict(t) for t in topups]
+document.querySelectorAll(".pill-tab").forEach(btn => {
+  btn.addEventListener("click", () => loadHistory(btn.dataset.histtab));
+});
 
+// ---------------- topup / support (open bot chat) ----------------
+function goTopup() {
+  tg?.showPopup?.({
+    title: "Hisobni to'ldirish",
+    message: "Bot chatiga qayting va /topup buyrug'ini yuboring — u yerda summani va to'lov chekini yuborasiz.",
+    buttons: [{ type: "ok" }],
+  }) || showToast("Bot chatida /topup buyrug'ini yuboring");
+}
 
-# ==================== ADMIN PANEL API ====================
-class CategoryRequest(BaseModel):
-    name: str
-    icon_emoji: str = "🎮"
-    badge: str = ""
-    needs_player_id: bool = False
+function goSupport() {
+  tg?.showPopup?.({
+    title: "Yordam",
+    message: "Savollaringiz bo'lsa, bot chatiga qaytib yozing — admin siz bilan bog'lanadi.",
+    buttons: [{ type: "ok" }],
+  }) || showToast("Bot chatida admin bilan bog'laning");
+}
 
+document.getElementById("btnTopup").addEventListener("click", goTopup);
+document.getElementById("btnTopupSettings").addEventListener("click", goTopup);
+document.getElementById("btnSupport").addEventListener("click", goSupport);
+document.getElementById("btnSupportSettings").addEventListener("click", goSupport);
 
-class ProductRequest(BaseModel):
-    category_id: int
-    name: str
-    price: int
-
-
-class StatusRequest(BaseModel):
-    status: str
-    admin_comment: str | None = None
-
-
-@app.get("/api/admin/stats")
-async def admin_stats(_: str = Depends(check_admin_auth)):
-    return db.get_stats()
-
-
-@app.get("/api/admin/categories")
-async def admin_list_categories(_: str = Depends(check_admin_auth)):
-    return [dict(c) for c in db.get_all_categories()]
-
-
-@app.post("/api/admin/categories")
-async def admin_add_category(body: CategoryRequest, _: str = Depends(check_admin_auth)):
-    cat_id = db.add_category(body.name, body.icon_emoji, body.badge, int(body.needs_player_id))
-    return {"id": cat_id}
-
-
-@app.put("/api/admin/categories/{category_id}")
-async def admin_edit_category(category_id: int, body: CategoryRequest, _: str = Depends(check_admin_auth)):
-    if not db.get_category(category_id):
-        raise HTTPException(status_code=404, detail="Kategoriya topilmadi")
-    db.update_category(category_id, body.name, body.icon_emoji, body.badge, int(body.needs_player_id))
-    return {"ok": True}
-
-
-@app.delete("/api/admin/categories/{category_id}")
-async def admin_delete_category(category_id: int, _: str = Depends(check_admin_auth)):
-    if not db.get_category(category_id):
-        raise HTTPException(status_code=404, detail="Kategoriya topilmadi")
-    db.delete_category(category_id)
-    return {"ok": True}
-
-
-@app.get("/api/admin/products")
-async def admin_list_products(_: str = Depends(check_admin_auth)):
-    return [dict(p) for p in db.get_all_products_with_category()]
-
-
-@app.post("/api/admin/products")
-async def admin_add_product(body: ProductRequest, _: str = Depends(check_admin_auth)):
-    if not db.get_category(body.category_id):
-        raise HTTPException(status_code=404, detail="Kategoriya topilmadi")
-    prod_id = db.add_product(body.category_id, body.name, body.price)
-    return {"id": prod_id}
-
-
-@app.put("/api/admin/products/{product_id}")
-async def admin_edit_product(product_id: int, body: ProductRequest, _: str = Depends(check_admin_auth)):
-    if not db.get_product(product_id):
-        raise HTTPException(status_code=404, detail="Mahsulot topilmadi")
-    db.update_product(product_id, body.name, body.price)
-    return {"ok": True}
-
-
-@app.delete("/api/admin/products/{product_id}")
-async def admin_delete_product(product_id: int, _: str = Depends(check_admin_auth)):
-    if not db.get_product(product_id):
-        raise HTTPException(status_code=404, detail="Mahsulot topilmadi")
-    db.delete_product(product_id)
-    return {"ok": True}
-
-
-@app.get("/api/admin/orders")
-async def admin_list_orders(status: str | None = None, _: str = Depends(check_admin_auth)):
-    return [dict(o) for o in db.get_all_orders(status)]
-
-
-@app.post("/api/admin/orders/{order_id}/status")
-async def admin_set_order_status(order_id: int, body: StatusRequest, _: str = Depends(check_admin_auth)):
-    order = db.get_order(order_id)
-    if not order:
-        raise HTTPException(status_code=404, detail="Buyurtma topilmadi")
-    db.set_order_status(order_id, body.status, body.admin_comment)
-
-    if bot:
-        texts = {
-            "bajarildi": f"🎉 Buyurtmangiz #{order_id} yetkazib berildi!",
-            "bekor_qilindi": f"❌ Buyurtmangiz #{order_id} bekor qilindi."
-                              + (f"\nSabab: {body.admin_comment}" if body.admin_comment else "")
-                              + f"\nTo'langan {order['price']:,} so'm balansingizga qaytarildi.".replace(",", " "),
-            "kutilmoqda": f"⏳ Buyurtmangiz #{order_id} qayta ko'rib chiqilmoqda.",
-        }
-        text = texts.get(body.status)
-        if text:
-            try:
-                await bot.send_message(order["user_id"], text)
-            except Exception:
-                pass
-    return {"ok": True}
-
-
-@app.get("/api/admin/topups")
-async def admin_list_topups(status: str | None = None, _: str = Depends(check_admin_auth)):
-    return [dict(t) for t in db.get_all_topups(status)]
-
-
-@app.post("/api/admin/topups/{topup_id}/status")
-async def admin_set_topup_status(topup_id: int, body: StatusRequest, _: str = Depends(check_admin_auth)):
-    topup = db.get_topup(topup_id)
-    if not topup:
-        raise HTTPException(status_code=404, detail="To'lov topilmadi")
-    db.set_topup_status(topup_id, body.status, body.admin_comment)
-
-    if bot:
-        texts = {
-            "tasdiqlandi": f"✅ Balansingiz {topup['amount']:,} so'mga to'ldirildi!".replace(",", " "),
-            "rad_etildi": "❌ Hisobni to'ldirish so'rovingiz rad etildi. Admin bilan bog'laning.",
-        }
-        text = texts.get(body.status)
-        if text:
-            try:
-                await bot.send_message(topup["user_id"], text)
-            except Exception:
-                pass
-    return {"ok": True}
-
-
-@app.get("/admin")
-async def admin_page(_: str = Depends(check_admin_auth)):
-    return FileResponse("static/admin/index.html")
-
-
-# ---------------- Static Mini App ----------------
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
-
-@app.get("/")
-async def index():
-    return FileResponse("static/index.html")
-
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=PORT)
+// ---------------- init ----------------
+(async function init() {
+  await loadMe();
+  await loadCategories();
+})();
