@@ -16,3 +16,5 @@ class AdminFlow(StatesGroup):
     waiting_product_name = State()
     waiting_product_price = State()
     waiting_reject_reason = State()
+    waiting_edit_product_id = State()
+    waiting_edit_new_price = State()
