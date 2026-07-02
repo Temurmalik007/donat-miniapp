@@ -118,6 +118,11 @@ async def api_products(category_id: int):
     }
 
 
+import re
+
+PLAYER_ID_PATTERN = re.compile(r"^\d{5,12}(\(\d{1,6}\))?$")
+
+
 @app.post("/api/order")
 async def api_create_order(body: OrderRequest):
     tg_user = get_authed_user(body.init_data)
@@ -126,8 +131,15 @@ async def api_create_order(body: OrderRequest):
         raise HTTPException(status_code=404, detail="Mahsulot topilmadi")
 
     category = db.get_category(product["category_id"])
-    if category["needs_player_id"] and not body.player_id:
-        raise HTTPException(status_code=400, detail="Player ID kiritilishi shart")
+    if category["needs_player_id"]:
+        pid = (body.player_id or "").strip()
+        if not pid:
+            raise HTTPException(status_code=400, detail="Player ID kiritilishi shart")
+        if not PLAYER_ID_PATTERN.match(pid):
+            raise HTTPException(
+                status_code=400,
+                detail="Player ID noto'g'ri formatda. Faqat raqamlardan iborat bo'lishi kerak.",
+            )
 
     user = db.get_user(tg_user["id"])
     if not user or user["balance"] < product["price"]:
