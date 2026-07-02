@@ -2,116 +2,123 @@
 <html lang="uz">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<title>Donat Do'kon</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Donat Do'kon — Admin</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/style.css" />
-<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="stylesheet" href="/static/admin/admin.css" />
 </head>
 <body>
 
+<div class="layout">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">D</div>
+      <div class="brand-name">Donat Admin</div>
+    </div>
+    <nav class="side-nav">
+      <button class="side-link active" data-page="dashboard">📊 Bosh sahifa</button>
+      <button class="side-link" data-page="categories">🗂 Kategoriyalar</button>
+      <button class="side-link" data-page="products">📦 Mahsulotlar</button>
+      <button class="side-link" data-page="orders">🧾 Buyurtmalar</button>
+      <button class="side-link" data-page="topups">💳 To'lovlar</button>
+    </nav>
+  </aside>
+
+  <main class="content">
+
+    <!-- ==================== DASHBOARD ==================== -->
+    <section id="page-dashboard" class="page">
+      <h1 class="page-title">Bosh sahifa</h1>
+      <div class="stat-grid" id="statGrid"></div>
+    </section>
+
+    <!-- ==================== CATEGORIES ==================== -->
+    <section id="page-categories" class="page hidden">
+      <div class="page-head">
+        <h1 class="page-title">Kategoriyalar</h1>
+        <button class="btn-primary" id="btnNewCategory">+ Yangi kategoriya</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>ID</th><th>Ikonka</th><th>Nomi</th><th>Badge</th><th>Player ID</th><th></th></tr>
+          </thead>
+          <tbody id="categoriesBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ==================== PRODUCTS ==================== -->
+    <section id="page-products" class="page hidden">
+      <div class="page-head">
+        <h1 class="page-title">Mahsulotlar</h1>
+        <button class="btn-primary" id="btnNewProduct">+ Yangi mahsulot</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>ID</th><th>Kategoriya</th><th>Nomi</th><th>Narxi</th><th></th></tr>
+          </thead>
+          <tbody id="productsBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ==================== ORDERS ==================== -->
+    <section id="page-orders" class="page hidden">
+      <h1 class="page-title">Buyurtmalar</h1>
+      <div class="filter-row" id="ordersFilter">
+        <button class="filter-chip active" data-status="">Barchasi</button>
+        <button class="filter-chip" data-status="kutilmoqda">Kutilmoqda</button>
+        <button class="filter-chip" data-status="bajarildi">Bajarildi</button>
+        <button class="filter-chip" data-status="bekor_qilindi">Bekor qilindi</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>ID</th><th>Mijoz</th><th>Mahsulot</th><th>Player ID</th><th>Narx</th><th>Holat</th><th>Sana</th><th></th></tr>
+          </thead>
+          <tbody id="ordersBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ==================== TOPUPS ==================== -->
+    <section id="page-topups" class="page hidden">
+      <h1 class="page-title">To'lovlar (hisob to'ldirish)</h1>
+      <div class="filter-row" id="topupsFilter">
+        <button class="filter-chip active" data-status="">Barchasi</button>
+        <button class="filter-chip" data-status="kutilmoqda">Kutilmoqda</button>
+        <button class="filter-chip" data-status="tasdiqlandi">Tasdiqlandi</button>
+        <button class="filter-chip" data-status="rad_etildi">Rad etildi</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>ID</th><th>Mijoz</th><th>Summa</th><th>Usul</th><th>Holat</th><th>Sana</th><th></th></tr>
+          </thead>
+          <tbody id="topupsBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- ==================== MODAL ==================== -->
+<div class="modal-overlay hidden" id="modalOverlay">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="modalTitle">Sarlavha</h3>
+      <button class="modal-close" id="modalClose">✕</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+  </div>
+</div>
+
 <div id="toast" class="toast"></div>
 
-<!-- ==================== BOSH SAHIFA ==================== -->
-<main id="view-home" class="view">
-  <header class="topbar">
-    <div class="user-chip">
-      <div class="avatar" id="avatar">A</div>
-      <div>
-        <div class="user-name" id="userName">...</div>
-        <div class="user-id" id="userIdLabel">ID: —</div>
-      </div>
-    </div>
-  </header>
-
-  <section class="balance-card">
-    <div class="balance-glow"></div>
-    <div class="balance-label">Balans</div>
-    <div class="balance-amount"><span id="balanceValue">0</span> <span class="balance-unit">so'm</span></div>
-    <div class="balance-actions">
-      <button class="bal-btn" id="btnTopup">
-        <span class="bal-btn-icon">💳</span>Hisobni to'ldirish
-      </button>
-      <button class="bal-btn" id="btnSupport">
-        <span class="bal-btn-icon">💬</span>Yordam
-      </button>
-    </div>
-  </section>
-
-  <div class="section-title">O'yinlar va xizmatlar</div>
-  <div id="categoryGrid" class="grid"></div>
-</main>
-
-<!-- ==================== KATEGORIYA / MAHSULOTLAR ==================== -->
-<main id="view-products" class="view hidden">
-  <header class="subheader">
-    <button class="back-btn" data-back="home">←</button>
-    <div class="subheader-title" id="productsTitle">Mahsulotlar</div>
-  </header>
-
-  <div id="playerIdBlock" class="player-id-block hidden">
-    <label class="field-label">Player ID</label>
-    <input id="playerIdInput" class="field-input" placeholder="Player ID raqamingiz" inputmode="numeric" />
-  </div>
-
-  <div id="productList" class="product-list"></div>
-</main>
-
-<!-- ==================== TARIX ==================== -->
-<main id="view-history" class="view hidden">
-  <header class="subheader">
-    <div class="subheader-title">Tarix</div>
-  </header>
-
-  <div class="pill-tabs">
-    <button class="pill-tab active" data-histtab="orders">Buyurtmalar</button>
-    <button class="pill-tab" data-histtab="topups">To'lovlar</button>
-  </div>
-
-  <div id="historyList" class="history-list"></div>
-</main>
-
-<!-- ==================== SOZLAMALAR ==================== -->
-<main id="view-settings" class="view hidden">
-  <header class="subheader">
-    <div class="subheader-title">Sozlamalar</div>
-  </header>
-
-  <div class="settings-card">
-    <div class="settings-row">
-      <span class="settings-label">ID</span>
-      <span class="settings-value" id="settingsUserId">—</span>
-    </div>
-    <div class="settings-row">
-      <span class="settings-label">Balans</span>
-      <span class="settings-value" id="settingsBalance">—</span>
-    </div>
-  </div>
-
-  <div class="settings-card">
-    <button class="settings-action" id="btnTopupSettings">
-      💳 Hisobni to'ldirish
-    </button>
-    <button class="settings-action" id="btnSupportSettings">
-      💬 Qo'llab-quvvatlash
-    </button>
-  </div>
-</main>
-
-<!-- ==================== BOTTOM NAV ==================== -->
-<nav class="bottom-nav">
-  <button class="nav-btn active" data-tab="home">
-    <span class="nav-icon">🏠</span><span>Bosh sahifa</span>
-  </button>
-  <button class="nav-btn" data-tab="history">
-    <span class="nav-icon">🕒</span><span>Tarix</span>
-  </button>
-  <button class="nav-btn" data-tab="settings">
-    <span class="nav-icon">⚙️</span><span>Sozlamalar</span>
-  </button>
-</nav>
-
-<script src="/static/app.js"></script>
+<script src="/static/admin/admin.js"></script>
 </body>
 </html>
