@@ -17,6 +17,18 @@ function fmt(n) {
   return Number(n).toLocaleString("ru-RU").replace(/,/g, " ");
 }
 
+// "60UC" -> "60 UC", "120Olmos" -> "120 Olmos" — raqam va harf orasiga probel qo'yadi
+function formatProductName(name) {
+  return String(name).replace(/(\d)([A-Za-z\u0400-\u04FF])/g, "$1 $2");
+}
+
+// Player ID format: 5-12 raqam, ixtiyoriy (zone) qismi bilan — masalan 123456789 yoki 123456789(1234)
+const PLAYER_ID_PATTERN = /^\d{5,12}(\(\d{1,6}\))?$/;
+
+function isPlayerIdValid(value) {
+  return PLAYER_ID_PATTERN.test(value.trim());
+}
+
 function showToast(msg) {
   const t = document.getElementById("toast");
   t.textContent = msg;
@@ -112,7 +124,11 @@ async function openCategory(categoryId) {
     document.getElementById("productsTitle").textContent = data.category.name;
     const idBlock = document.getElementById("playerIdBlock");
     idBlock.classList.toggle("hidden", !data.category.needs_player_id);
-    document.getElementById("playerIdInput").value = "";
+    const idInput = document.getElementById("playerIdInput");
+    idInput.value = "";
+    idInput.classList.remove("input-error");
+    idInput.placeholder = "Masalan: 123456789 (yoki ML uchun 123456789(1234))";
+    document.getElementById("playerIdError").textContent = "";
 
     const list = document.getElementById("productList");
     if (!data.products.length) {
@@ -120,7 +136,7 @@ async function openCategory(categoryId) {
     } else {
       list.innerHTML = data.products.map(p => `
         <button class="product-card" data-prod="${p.id}">
-          <div class="product-name">${p.name}</div>
+          <div class="product-name">${formatProductName(p.name)}</div>
           <div class="product-price">${fmt(p.price)} so'm</div>
         </button>
       `).join("");
@@ -165,10 +181,23 @@ function renderBuyBar() {
 async function submitOrder() {
   if (!state.selectedProduct) return;
   const needsId = state.currentCategory?.needs_player_id;
-  const playerId = document.getElementById("playerIdInput").value.trim();
+  const idInput = document.getElementById("playerIdInput");
+  const idError = document.getElementById("playerIdError");
+  const playerId = idInput.value.trim();
+
+  idInput.classList.remove("input-error");
+  idError.textContent = "";
 
   if (needsId && !playerId) {
-    showToast("Player ID kiriting");
+    idInput.classList.add("input-error");
+    idError.textContent = "Player ID kiritilishi shart";
+    idInput.focus();
+    return;
+  }
+  if (needsId && !isPlayerIdValid(playerId)) {
+    idInput.classList.add("input-error");
+    idError.textContent = "ID noto'g'ri formatda. Faqat raqamlardan iborat bo'lishi kerak (masalan: 123456789).";
+    idInput.focus();
     return;
   }
   if (state.balance < state.selectedProduct.price) {
@@ -281,6 +310,11 @@ document.getElementById("btnSupport").addEventListener("click", goSupport);
 document.getElementById("btnSupportSettings").addEventListener("click", goSupport);
 
 // ---------------- init ----------------
+document.getElementById("playerIdInput").addEventListener("input", (e) => {
+  e.target.classList.remove("input-error");
+  document.getElementById("playerIdError").textContent = "";
+});
+
 (async function init() {
   await loadMe();
   await loadCategories();
