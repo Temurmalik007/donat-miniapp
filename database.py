@@ -144,6 +144,31 @@ def add_product(category_id, name, price):
         return cur.lastrowid
 
 
+def update_product_price(product_id: int, new_price: int):
+    with get_conn() as conn:
+        conn.execute("UPDATE products SET price=? WHERE id=?", (new_price, product_id))
+
+
+def update_product_name(product_id: int, new_name: str):
+    with get_conn() as conn:
+        conn.execute("UPDATE products SET name=? WHERE id=?", (new_name, product_id))
+
+
+def delete_product(product_id: int):
+    with get_conn() as conn:
+        conn.execute("UPDATE products SET is_active=0 WHERE id=?", (product_id,))
+
+
+def get_all_products_with_category():
+    with get_conn() as conn:
+        return conn.execute(
+            """SELECT p.id, p.name, p.price, c.name AS category_name
+               FROM products p JOIN categories c ON c.id = p.category_id
+               WHERE p.is_active=1
+               ORDER BY c.sort_order, c.id, p.sort_order, p.id"""
+        ).fetchall()
+
+
 # ---------- ORDERS (balansdan avtomatik yechiladi) ----------
 def create_order(user_id: int, product_id: int, price: int, player_id: str = None) -> int:
     with get_conn() as conn:
