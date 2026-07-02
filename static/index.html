@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Donat Do'kon</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css" />
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+
+<div id="toast" class="toast"></div>
+
+<!-- ==================== BOSH SAHIFA ==================== -->
+<main id="view-home" class="view">
+  <header class="topbar">
+    <div class="user-chip">
+      <div class="avatar" id="avatar">A</div>
+      <div>
+        <div class="user-name" id="userName">...</div>
+        <div class="user-id" id="userIdLabel">ID: —</div>
+      </div>
+    </div>
+  </header>
+
+  <section class="balance-card">
+    <div class="balance-glow"></div>
+    <div class="balance-label">Balans</div>
+    <div class="balance-amount"><span id="balanceValue">0</span> <span class="balance-unit">so'm</span></div>
+    <div class="balance-actions">
+      <button class="bal-btn" id="btnTopup">
+        <span class="bal-btn-icon">💳</span>Hisobni to'ldirish
+      </button>
+      <button class="bal-btn" id="btnSupport">
+        <span class="bal-btn-icon">💬</span>Yordam
+      </button>
+    </div>
+  </section>
+
+  <div class="section-title">O'yinlar va xizmatlar</div>
+  <div id="categoryGrid" class="grid"></div>
+</main>
+
+<!-- ==================== KATEGORIYA / MAHSULOTLAR ==================== -->
+<main id="view-products" class="view hidden">
+  <header class="subheader">
+    <button class="back-btn" data-back="home">←</button>
+    <div class="subheader-title" id="productsTitle">Mahsulotlar</div>
+  </header>
+
+  <div id="playerIdBlock" class="player-id-block hidden">
+    <label class="field-label">Player ID</label>
+    <input id="playerIdInput" class="field-input" placeholder="Player ID raqamingiz" inputmode="numeric" />
+  </div>
+
+  <div id="productList" class="product-list"></div>
+</main>
+
+<!-- ==================== TARIX ==================== -->
+<main id="view-history" class="view hidden">
+  <header class="subheader">
+    <div class="subheader-title">Tarix</div>
+  </header>
+
+  <div class="pill-tabs">
+    <button class="pill-tab active" data-histtab="orders">Buyurtmalar</button>
+    <button class="pill-tab" data-histtab="topups">To'lovlar</button>
+  </div>
+
+  <div id="historyList" class="history-list"></div>
+</main>
+
+<!-- ==================== SOZLAMALAR ==================== -->
+<main id="view-settings" class="view hidden">
+  <header class="subheader">
+    <div class="subheader-title">Sozlamalar</div>
+  </header>
+
+  <div class="settings-card">
+    <div class="settings-row">
+      <span class="settings-label">ID</span>
+      <span class="settings-value" id="settingsUserId">—</span>
+    </div>
+    <div class="settings-row">
+      <span class="settings-label">Balans</span>
+      <span class="settings-value" id="settingsBalance">—</span>
+    </div>
+  </div>
+
+  <div class="settings-card">
+    <button class="settings-action" id="btnTopupSettings">
+      💳 Hisobni to'ldirish
+    </button>
+    <button class="settings-action" id="btnSupportSettings">
+      💬 Qo'llab-quvvatlash
+    </button>
+  </div>
+</main>
+
+<!-- ==================== BOTTOM NAV ==================== -->
+<nav class="bottom-nav">
+  <button class="nav-btn active" data-tab="home">
+    <span class="nav-icon">🏠</span><span>Bosh sahifa</span>
+  </button>
+  <button class="nav-btn" data-tab="history">
+    <span class="nav-icon">🕒</span><span>Tarix</span>
+  </button>
+  <button class="nav-btn" data-tab="settings">
+    <span class="nav-icon">⚙️</span><span>Sozlamalar</span>
+  </button>
+</nav>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
