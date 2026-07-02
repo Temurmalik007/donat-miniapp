@@ -199,7 +199,10 @@ async def admin_panel(message: Message):
     await message.answer(
         "🛠 <b>Admin panel</b>\n\n"
         "/add_category — yangi kategoriya\n"
-        "/add_product — yangi mahsulot\n",
+        "/add_product — yangi mahsulot\n"
+        "/list_products — barcha mahsulotlar ro'yxati (ID bilan)\n"
+        "/edit_price — mahsulot narxini o'zgartirish\n"
+        "/delete_product — mahsulotni o'chirish\n",
         parse_mode="HTML",
     )
 
@@ -283,3 +286,85 @@ async def add_prod_price(message: Message, state: FSMContext):
     db.add_product(data["category_id"], data["name"], int(message.text.strip()))
     await message.answer(f"✅ Mahsulot qo'shildi: {data['name']} — {int(message.text.strip()):,} so'm".replace(",", " "))
     await state.clear()
+
+
+# ---------- Mahsulotlar ro'yxati va narxni o'zgartirish ----------
+@router.message(Command("list_products"))
+async def list_products(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+    products = db.get_all_products_with_category()
+    if not products:
+        await message.answer("Hozircha mahsulot yo'q.")
+        return
+    lines = [f"#{p['id']} — {p['category_name']} — {p['name']} — {p['price']:,} so'm".replace(",", " ") for p in products]
+    await message.answer("\n".join(lines))
+
+
+@router.message(Command("edit_price"))
+async def edit_price_start(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    products = db.get_all_products_with_category()
+    if not products:
+        await message.answer("Hozircha mahsulot yo'q.")
+        return
+    lines = [f"#{p['id']} — {p['category_name']} — {p['name']} — {p['price']:,} so'm".replace(",", " ") for p in products]
+    await message.answer("Narxini o'zgartirmoqchi bo'lgan mahsulot ID'sini yuboring:\n\n" + "\n".join(lines))
+    await state.set_state(AdminFlow.waiting_edit_product_id)
+
+
+@router.message(AdminFlow.waiting_edit_product_id)
+async def edit_price_id(message: Message, state: FSMContext):
+    if not message.text.strip().isdigit():
+        await message.answer("Faqat raqam (ID) yuboring.")
+        return
+    product = db.get_product(int(message.text.strip()))
+    if not product:
+        await message.answer("Bunday ID topilmadi. Qaytadan urinib ko'ring yoki /list_products bilan tekshiring.")
+        return
+    await state.update_data(product_id=product["id"])
+    await message.answer(
+        f"<b>{product['name']}</b> — hozirgi narx: {product['price']:,} so'm\n\n"
+        "Yangi narxni yuboring (faqat raqam):".replace(",", " "),
+        parse_mode="HTML",
+    )
+    await state.set_state(AdminFlow.waiting_edit_new_price)
+
+
+@router.message(AdminFlow.waiting_edit_new_price)
+async def edit_price_finish(message: Message, state: FSMContext):
+    if not message.text.strip().isdigit():
+        await message.answer("Faqat raqam yuboring.")
+        return
+    data = await state.get_data()
+    new_price = int(message.text.strip())
+    db.update_product_price(data["product_id"], new_price)
+    await message.answer(f"✅ Narx yangilandi: {new_price:,} so'm".replace(",", " "))
+    await state.clear()
+
+
+@router.message(Command("delete_product"))
+async def delete_product_start(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+    products = db.get_all_products_with_category()
+    if not products:
+        await message.answer("Hozircha mahsulot yo'q.")
+        return
+    lines = [f"/delete_product_{p['id']} — {p['category_name']} — {p['name']} — {p['price']:,} so'm".replace(",", " ") for p in products]
+    await message.answer("O'chirmoqchi bo'lgan mahsulot tugmasini (buyrug'ini) bosing/yuboring:\n\n" + "\n".join(lines))
+
+
+@router.message(F.text.regexp(r"^/delete_product_(\d+)$"))
+async def delete_product_confirm(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+    import re
+    product_id = int(re.match(r"^/delete_product_(\d+)$", message.text.strip()).group(1))
+    product = db.get_product(product_id)
+    if not product:
+        await message.answer("Bunday ID topilmadi.")
+        return
+    db.delete_product(product_id)
+    await message.answer(f"🗑 O'chirildi: {product['name']}")
