@@ -17,3 +17,7 @@ WEBAPP_URL = os.getenv("WEBAPP_URL", "")
 
 # Render kabi platformalar PORT'ni o'zi beradi
 PORT = int(os.getenv("PORT", "8000"))
+
+# Admin veb-panel uchun login/parol
+ADMIN_PANEL_USERNAME = os.getenv("ADMIN_PANEL_USERNAME", "admin")
+ADMIN_PANEL_PASSWORD = os.getenv("ADMIN_PANEL_PASSWORD", "changeme123")
